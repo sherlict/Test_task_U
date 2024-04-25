@@ -47,7 +47,6 @@ select
               and event_name in ('first_visit', 'view_item', 'view_promotion', 'add_to_cart', 'add_shipping_info', 'add_payment_info', 'purchase')  
               and traffic_source.source not in('(data deleted)', '<Other>')
               and traffic_source.medium not in('(data deleted)', '(none)', '<Other>')    
-              and traffic_source.name not in('(data deleted)', '<Other>')          
         group by 1,2,3,4
         having user_purchase > 0
         order by event_date
