@@ -1,0 +1,53 @@
+select 
+        date(timestamp_micros(event_timestamp)) as event_date,
+        traffic_source.source as source, 
+        traffic_source.medium as medium, 
+        traffic_source.name as name,
+        count(distinct user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                    then value.int_value 
+                                                    end) as string)) as user_sessions_count,
+        count(distinct case when event_name = 'first_visit' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_first_visit,
+        count(distinct case when event_name = 'view_item' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                                        end) as user_view_item,
+        count(distinct case when event_name = 'view_promotion' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_view_promotion,
+        count(distinct case when event_name = 'add_to_cart' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_add_to_cart,
+        count(distinct case when event_name = 'add_shipping_info' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_add_shipping_info,
+        count(distinct case when event_name = 'add_payment_info' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_add_payment_info,
+        count(distinct case when event_name = 'purchase' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_purchase
+        from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` e, 
+              unnest(event_params) as event_params
+        where _table_suffix between '20200101' and '20201231'
+              and event_name in ('first_visit', 'view_item', 'view_promotion', 'add_to_cart', 'add_shipping_info', 'add_payment_info', 'purchase')  
+              and traffic_source.source not in('(data deleted)', '<Other>')
+              and traffic_source.medium not in('(data deleted)', '(none)', '<Other>')    
+              and traffic_source.name not in('(data deleted)', '<Other>')          
+        group by 1,2,3,4
+        having user_purchase > 0
+        order by event_date
