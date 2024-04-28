@@ -1,0 +1,37 @@
+with
+  user_ids as (
+    select 
+          distinct user_pseudo_id
+    from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  ),
+  sign_dates as (
+    select 
+          date(timestamp_micros(event_timestamp)) as sign_date,
+          user_pseudo_id
+    from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+    where event_name = 'first_visit'
+  ),
+  action_dates as (
+    select 
+          date(timestamp_micros(event_timestamp)) as action_date,
+          user_pseudo_id
+    from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+    where event_name in ('view_item', 'view_promotion', 'add_to_cart', 'add_shipping_info', 'add_payment_info', 'purchase')
+  ),
+  prepare_table AS (
+    select 
+          date_trunc(date(sign_date), week(monday)) as week_cohort,
+          extract(week from s.sign_date) as cohort_number,
+          extract(week from a.action_date) - extract(week from s.sign_date) as cohort_week,
+          s.user_pseudo_id
+    from sign_dates s
+    join action_dates a using(user_pseudo_id)
+    where a.action_date >= s.sign_date 
+  )
+select *
+from prepare_table
+pivot (
+  count(user_pseudo_id) 
+  for cohort_week in (0,1,2,3,4,5,6,7,8,9,10,11,12,13)
+)
+order by week_cohort
