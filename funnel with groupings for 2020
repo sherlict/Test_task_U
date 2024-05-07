@@ -1,0 +1,35 @@
+with cte as(
+select 
+        extract(year from timestamp_micros(event_timestamp)) as event_date,
+        item_name,
+        count(distinct case when event_name = 'select_item' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_select_item,
+        count(distinct case when event_name = 'view_item' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                                        end) as user_view_item,
+        count(distinct case when event_name = 'add_to_cart' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_add_to_cart,
+        count(distinct case when event_name = 'purchase' 
+                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
+                                                              then value.int_value 
+                                                              end) as string) 
+                            end) as user_purchase              
+from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+unnest(event_params) as event_params,
+unnest(items) as items
+where _table_suffix between '20200101' and '20201231' and event_name in ('select_item', 'view_item','add_to_cart', 'purchase')
+group by 1,2
+)
+select sum(user_select_item) as user_select_item,
+       sum(user_view_item) as user_view_item,
+       sum(user_add_to_cart) as user_add_to_cart,
+       sum(user_purchase) as user_purchase
+from cte
