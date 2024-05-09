@@ -1,119 +1,62 @@
-with
-first_visit_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location')as first_visit_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('first_visit')
+with 
+table1 as (
+  select 
+        user_pseudo_id || cast((select value.int_value
+                            from e.event_params 
+                            where key = 'ga_session_id') as string) as unique_customer,
+        array_agg(struct(event_name, 
+                         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
+                         from unnest(e.event_params) 
+                         where key = 'page_location') as page_location, 
+                         items.item_name)) as events
+  from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` e, 
+  unnest(event_params) as event_params,
+  unnest(items) as items
+  where _table_suffix between '20200101' and '20201231' 
+        and event_name in ('first_visit', 'select_item', 'view_item', 'view_promotion', 'add_to_cart', 'add_shipping_info', 'add_payment_info', 'purchase')
+        and item_name <> '(not set)'
+  group by unique_customer
 ),
-select_item_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location')as select_item_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('select_item')
+table2 as (
+select distinct
+         unique_customer,
+         event.event_name,
+         event.page_location,
+         event.item_name
+from table1, unnest(events) as event
 ),
-view_item_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as view_item_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('view_item')
-),
-view_promotion_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as view_promotion_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('view_promotion')
-),
-add_to_cart_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as add_to_cart_session_customer
-from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('add_to_cart')
-),
-add_shipping_info_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as add_shipping_info_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('add_shipping_info')
-),
-add_payment_info_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as add_payment_info_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('add_payment_info')
-),
-purchase_session as(
-select distinct user_pseudo_id||cast((select value.int_value
-                                  from e.event_params 
-                                  where key = 'ga_session_id') as string) as unique_customer,
-         (select replace(value.string_value, 'https://shop.googlemerchandisestore.com/', '')
-         from e.event_params 
-         where key = 'page_location') as purchase_session_customer
-FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`e, 
-unnest(event_params) as event_params
-where _table_suffix between '20200101' and '20201231' and event_name in ('purchase')
-),
-union_table as(
-select *
-from first_visit_session
-full join select_item_session using(unique_customer)
-full join view_item_session using(unique_customer)
-full join view_promotion_session  using(unique_customer)
-full join add_to_cart_session using(unique_customer)
-full join add_shipping_info_session using(unique_customer)
-full join add_payment_info_session using(unique_customer)
-full join purchase_session using(unique_customer)
-where purchase_session_customer is not null
-),
-concat_table as(
-select unique_customer,
-       concat(
-        'FIRST_VISIT_SESSION**|', ifnull(first_visit_session_customer, 'нет касания'),
-       '|**SELECT_ITEM_SESSION**|', ifnull(select_item_session_customer, 'нет касания'),
-       '|**VIEW_ITEM_SESSION**|', ifnull(view_item_session_customer, 'нет касания'),
-       '|**VIEW_PROMOTION**|', ifnull(view_promotion_session_customer, 'нет касания'),
-       '|**ADD_TO_CART_SESSION**|', ifnull(add_to_cart_session_customer, 'нет касания'),
-       '|**ADD_TO_SHIPPING_INFO_SESSION**|', ifnull(add_shipping_info_session_customer, 'нет касания'),
-       '|**ADD_TO_PAYMENT_INFO_SESSION**|', ifnull(add_payment_info_session_customer, 'нет касания'),
-       '|**PURCHASE_SESSION**|', ifnull(add_payment_info_session_customer, 'нет касания')) as concat_session
-from union_table
+table3 as(
+select 
+      unique_customer,
+      string_agg(page_location, ' >>> ' order by event_order) as page_location_chain,
+      item_name
+from (
+      select
+            unique_customer,
+            page_location,
+            event_name,
+            item_name,
+            row_number() over(partition by unique_customer, item_name order by 
+                                        case event_name 
+                                        when 'first_visit' then 1
+                                        when 'select_item' then 2
+                                        when 'view_item' then 3
+                                        when 'view_promotion' then 4
+                                        when 'add_to_cart' then 5
+                                        when 'add_shipping_info' then 6
+                                        when 'add_payment_info' then 7
+                                        when 'purchase' then 8
+                                        end) as event_order,
+            countif(event_name = 'purchase') over(partition by unique_customer, item_name) as purchase_count
+       from table2 as event
+) as filtered_events
+where purchase_count > 0
+group by unique_customer, item_name
+order by unique_customer, item_name
 )
-select concat_session,
-       count(unique_customer) as count_session
-from concat_table
-group by concat_session
-order by count_session desc
+select item_name,
+       page_location_chain,
+       count(unique_customer) as count_chain
+from table3
+group by item_name, page_location_chain
+order by count_chain desc
