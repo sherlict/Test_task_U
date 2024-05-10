@@ -21,7 +21,6 @@ with
   prepare_table AS (
     select 
           date_trunc(date(sign_date), week(monday)) as week_cohort,
-          extract(week from s.sign_date) as cohort_number,
           extract(week from a.action_date) - extract(week from s.sign_date) as cohort_week,
           s.user_pseudo_id
     from sign_dates s
