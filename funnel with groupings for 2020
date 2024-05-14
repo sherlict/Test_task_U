@@ -1,40 +1,33 @@
-with funnel_cte as (
-select
-    user_pseudo_id || value.int_value as unique_customer,
-    item_name,
-    count(distinct case when event_name = 'select_item' 
-                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
-                                                              then value.int_value 
-                                                              end) as string) 
-                            end) as select_item_count,
-        count(distinct case when event_name = 'view_item' 
-                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
-                                                              then value.int_value 
-                                                              end) as string) 
-                            end) as view_item_count,
-        count(distinct case when event_name = 'add_to_cart' 
-                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
-                                                              then value.int_value 
-                                                              end) as string) 
-                            end) as add_to_cart_count,
-        count(distinct case when event_name = 'purchase' 
-                            then user_pseudo_id || cast((case when event_params.key = 'ga_session_id' 
-                                                              then value.int_value 
-                                                              end) as string) 
-                            end) as purchase_count 
-from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
-unnest(event_params) as event_params,
-unnest(items) as items
-where _table_suffix between '20200101' and '20201231'
-group by
-    unique_customer,
-    item_name
+with 
+table1 as (
+    select distinct
+        user_pseudo_id || cast((select value.int_value from e.event_params where key = 'ga_session_id') as string) as unique_session,
+        item_name,
+        event_name
+    from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` e,
+         unnest(event_params) as event_params,
+         unnest(items) as items
+    where _table_suffix between '20200101' and '20201231'
+          and event_name in ('select_item', 'view_item', 'add_to_cart', 'purchase')
+),
+table2 as (
+    select
+        unique_session,
+        item_name,
+        max(case when event_name = 'select_item' then 1 else 0 end) over(partition by unique_session, item_name) as select_item_flag,
+        max(case when event_name = 'view_item' then 2 else 0 end) over(partition by unique_session, item_name) as view_item_flag,
+        max(case when event_name = 'add_to_cart' then 3 else 0 end) over(partition by unique_session, item_name) as add_to_cart_flag,
+        max(case when event_name = 'purchase' then 4 else 0 end) over(partition by unique_session, item_name) as purchase_flag
+    from table1
 )
-select item_name,
-       sum(select_item_count) as select_item_count,
-       sum(view_item_count) as view_item_count,
-       sum(add_to_cart_count) as add_to_cart_count,
-       sum(purchase_count) as purchase_count
-from funnel_cte
-where select_item_count > 0 and item_name <> '(not set)'
+select
+    item_name,
+    count(unique_session) as user_count,
+    count(distinct case when select_item_flag = 1 then unique_session end) as select_item_count,
+    count(distinct case when select_item_flag = 1 and view_item_flag = 2 then unique_session end) as view_item_count,
+    count(distinct case when select_item_flag = 1 and view_item_flag = 2 and add_to_cart_flag = 3 then unique_session end) AS add_to_cart_count,
+    count(distinct case when select_item_flag = 1 and view_item_flag = 2 and add_to_cart_flag = 3 and purchase_flag = 4 then unique_session end) as purchase_count
+from table2
 group by item_name
+having select_item_count > 0
+order by purchase_count desc
