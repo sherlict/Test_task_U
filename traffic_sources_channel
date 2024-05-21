@@ -1,0 +1,40 @@
+with 
+t1 as(
+select distinct
+      timestamp_micros(event_timestamp) as event_date, 
+      user_pseudo_id || cast((select value.int_value from e.event_params where key = 'ga_session_id') as string) || items.item_name as user_item,
+      event_name,
+      traffic_source.medium as medium,
+      traffic_source.source as source
+from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` e,
+      unnest(event_params) as event_params,
+      unnest(items) as items  
+where _table_suffix between '20200101' and '20201231' and item_name <> '(not set)'
+),
+t2 as(
+select 
+      event_date,
+      user_item,
+      event_name,
+      medium,
+      source,
+      sum(case when event_name = 'purchase' then 1 else 0 end) over (partition by user_item) as count_purchase
+from t1
+),
+t3 as(
+select *
+from t2
+where count_purchase > 0
+),
+t4 as(
+select 
+      user_item,
+      string_agg(source || ' / ' || medium, ' -> ' order by event_date) as chain
+from t3
+group by user_item
+)
+select chain,
+       count(user_item) as count_chain
+from t4
+group by chain
+order by count_chain desc
