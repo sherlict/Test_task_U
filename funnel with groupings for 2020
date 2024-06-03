@@ -1,33 +1,66 @@
 with 
-table1 as (
-    select distinct
-        user_pseudo_id || cast((select value.int_value from e.event_params where key = 'ga_session_id') as string) as unique_session,
+prepare_sample as ( 
+select  
+        user_pseudo_id, 
+        event_name, 
         item_name,
-        event_name
-    from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` e,
-         unnest(event_params) as event_params,
-         unnest(items) as items
-    where _table_suffix between '20200101' and '20201231'
-          and event_name in ('select_item', 'view_item', 'add_to_cart', 'purchase')
+        min(timestamp_micros(event_timestamp)) event_timestamp
+from `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+      unnest(items)
+where _table_suffix between '20200101' and '20201231'
+      and event_name in ('select_item', 
+                         'view_item', 
+                         'add_to_cart', 
+                         'purchase')
+group by 1,2,3
+), 
+user_event_timestamp as ( 
+select  prepare_sample.*, 
+        row_number() over(partition by user_pseudo_id order by item_name,
+                                                               case event_name 
+                                                               when 'select_item' then 1
+                                                               when 'view_item' then 2
+                                                               when 'add_to_cart' then 3
+                                                               when 'purchase' then 4
+                                                               end 
+                         ) as event_name_rank
+from prepare_sample 
 ),
-table2 as (
-    select
-        unique_session,
-        item_name,
-        max(case when event_name = 'select_item' then 1 else 0 end) over(partition by unique_session, item_name) as select_item_flag,
-        max(case when event_name = 'view_item' then 2 else 0 end) over(partition by unique_session, item_name) as view_item_flag,
-        max(case when event_name = 'add_to_cart' then 3 else 0 end) over(partition by unique_session, item_name) as add_to_cart_flag,
-        max(case when event_name = 'purchase' then 4 else 0 end) over(partition by unique_session, item_name) as purchase_flag
-    from table1
+funnel as (
+select   
+        t1.*, 
+        t2.event_timestamp as view_item_event_timestamp, 
+        t3.event_timestamp as add_to_cart_event_timestamp, 
+        t4.event_timestamp as purchase_event_timestamp, 
+        count(*) over(partition by t1.user_pseudo_id) user_freq
+from (select *  
+      from  user_event_timestamp  
+      where  event_name = 'select_item') t1 
+ 
+left join user_event_timestamp t2 
+    on  t1.user_pseudo_id = t2.user_pseudo_id 
+    and t2.event_name = 'view_item' 
+    and t2.item_name = t1.item_name 
+    and t2.event_name_rank > t1.event_name_rank 
+ 
+left join user_event_timestamp t3 
+    on  t1.user_pseudo_id = t3.user_pseudo_id 
+    and t3.event_name = 'add_to_cart' 
+    and t3.item_name = t1.item_name 
+    and t3.event_name_rank > t2.event_name_rank 
+ 
+left join user_event_timestamp t4 
+    on  t1.user_pseudo_id = t4.user_pseudo_id 
+    and t4.event_name = 'purchase' 
+    and t4.item_name = t1.item_name 
+    and t4.event_name_rank > t3.event_name_rank
 )
-select
-    item_name,
-    count(unique_session) as user_count,
-    count(distinct case when select_item_flag = 1 then unique_session end) as select_item_count,
-    count(distinct case when select_item_flag = 1 and view_item_flag = 2 then unique_session end) as view_item_count,
-    count(distinct case when select_item_flag = 1 and view_item_flag = 2 and add_to_cart_flag = 3 then unique_session end) AS add_to_cart_count,
-    count(distinct case when select_item_flag = 1 and view_item_flag = 2 and add_to_cart_flag = 3 and purchase_flag = 4 then unique_session end) as purchase_count
-from table2
-group by item_name
-having select_item_count > 0
-order by purchase_count desc
+select  
+        item_name, 
+        count(distinct concat(user_pseudo_id,event_timestamp,item_name)) as select_item_count, 
+        count(distinct concat(user_pseudo_id,view_item_event_timestamp,item_name)) as view_item_count, 
+        count(distinct concat(user_pseudo_id,add_to_cart_event_timestamp,item_name))as add_to_cart_count, 
+        count(distinct concat(user_pseudo_id,purchase_event_timestamp,item_name)) as purchase_count 
+from funnel 
+group by item_name 
+order by select_item_count desc
